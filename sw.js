@@ -1,8 +1,8 @@
 // キャッシュ名のバージョンを更新 (変更があるたびにバージョンを上げてください)
-const CACHE_NAME = 'dmplayer-v2.5'; 
+const CACHE_NAME = 'dmplayer-v3.5'; 
 
 // キャッシュ名のバージョンを更新 (変更があるたびにバージョンを上げてください)
-const CACHE_NAME = 'dmplayer-v2.5';
+const CACHE_NAME = 'dmplayer-v3.5';
 const RUNTIME_CACHE = 'dmplayer-runtime-v1';
 
 // オフラインで使用したいリソースのリスト（アプリシェル）
