@@ -53,6 +53,20 @@
       position: relative; 
       height: 100%; 
     }
+
+    /* 🔧 ビジュアライザーモード時、キャンバスを最前面にして UI を透過させる */
+body.visualizer-mode #visualizerCanvas {
+    z-index: 50 !important;   /* すべての UI の手前へ移動 */
+    opacity: 1.0 !important;
+}
+
+/* UI を薄くしてビジュアライザーを隠さないようにする */
+body.visualizer-mode .screen > *:not(#visualizerCanvas) {
+    position: relative;
+    z-index: 1 !important;   /* キャンバスより下に配置 */
+    opacity: 0.35;           /* 透過（必要であれば 0〜1 で調整可能） */
+}
+
     
     .sidebar-content {
         flex-grow: 1;
