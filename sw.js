@@ -1,49 +1,59 @@
-// キャッシュ名のバージョンを更新 (変更があるたびにバージョンを上げてください)
-const CACHE_NAME = 'dmplayer-v2.0.16'; // ⭐ バージョンを上げて、新しいService Workerを強制的にインストールさせる
+// キャッシュ名のバージョンを更新
+// ⭐必ずバージョンを上げて、新しいService Workerを強制的にインストールさせる
+const CACHE_NAME = 'dmplayer-v2.0.18'; 
 const RUNTIME_CACHE = 'dmplayer-runtime-v1';
 
-// ⭐【修正箇所】GitHub Pagesのプロジェクトパスを定義
+// ⭐【重要】GitHub Pagesのプロジェクトパスを定義
 const REPO_PATH = '/dmplayer45.github.io/';
-// ⭐【修正箇所】メインHTMLファイル名
+// ⭐【重要】メインHTMLファイル名
 const MAIN_HTML_FILE = 'index.html';
-// 最終的なフォールバックHTMLのキャッシュキー（リポジトリパス/HTMLファイル名）
-const FALLBACK_HTML_PATH = REPO_PATH + MAIN_HTML_FILE;
+// 最終的なフォールバックHTMLのキャッシュキー
+const FALLBACK_HTML_PATH = REPO_PATH + MAIN_HTML_FILE; // /dmplayer45.github.io/index.html
 
 
 // オフラインで使用したいリソースのリスト（アプリシェル）
 const urlsToCache = [
-    // ⭐ 修正: すべての同居ファイルに REPO_PATH を付加
-    REPO_PATH, // https://ikaring45.github.io/dmplayer45.github.io/ のルートを指す
-    FALLBACK_HTML_PATH, // /dmplayer45.github.io/index.html
+    REPO_PATH, // Project root URL (e.g., /dmplayer45.github.io/)
+    FALLBACK_HTML_PATH, // Explicit index.html path
     REPO_PATH + 'manifest.json',
     REPO_PATH + 'icon-192x192.png',
     REPO_PATH + 'icon-512x512.png',
-    'https://cdn.jsdelivr.net/npm/jsmediatags@3.9.7/dist/jsmediatags.min.js'
-    // 必要に応じて、CSSファイルなども REPO_PATH + 'style.css' の形式で追加してください
+    // jsmediatagsはCDNなので、ここでは含めず runtime cache に任せます。
 ];
 
 self.addEventListener('install', (event) => {
-    // すぐにコントロールを奪う
+    console.log(`[SW:${CACHE_NAME}] Installation started.`);
+    console.log(`[SW:${CACHE_NAME}] Attempting to cache the following URLs:`, urlsToCache); // ⭐ デバッグログ
+    
     self.skipWaiting();
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(urlsToCache).catch((err) => {
-                console.error('Failed to pre-cache some assets (Check REPO_PATH and file names!):', err);
+            return cache.addAll(urlsToCache).then(() => {
+                console.log(`[SW:${CACHE_NAME}] All core assets successfully pre-cached.`);
+            }).catch((err) => {
+                // ⭐ パスの間違いやファイル不足があればここでエラーが出ます
+                console.error('[SW ERROR] Failed to pre-cache some assets. Check server files/paths:', err);
+                throw err; // インストール失敗をブラウザに伝達する
             });
         })
     );
 });
 
 self.addEventListener('activate', (event) => {
+    console.log(`[SW:${CACHE_NAME}] Activation started.`);
     event.waitUntil(
         (async () => {
             // 古いキャッシュを削除
             const cacheNames = await caches.keys();
             await Promise.all(cacheNames.map(name => {
-                if (name !== CACHE_NAME && name !== RUNTIME_CACHE) return caches.delete(name);
+                if (name !== CACHE_NAME && name !== RUNTIME_CACHE) {
+                    console.log(`[SW:${CACHE_NAME}] Deleting old cache: ${name}`);
+                    return caches.delete(name);
+                }
             }));
             // クライアントの制御を要求 (即座に新しい Service Worker を有効化)
             await self.clients.claim();
+            console.log(`[SW:${CACHE_NAME}] Activation successful and clients claimed.`);
         })()
     );
 });
@@ -52,29 +62,28 @@ self.addEventListener('fetch', (event) => {
     const req = event.request;
     const url = new URL(req.url);
 
-    // Skip non-GET requests
-    if (req.method !== 'GET') return;
+    // Skip non-GET and chrome-extension requests
+    if (req.method !== 'GET' || url.protocol === 'chrome-extension:') return;
+    
+    // オーディオファイルのキャッシュはスキップ（大容量ファイルのため）
+    if (req.destination === 'audio' || req.destination === 'media') return;
 
     // 1. Navigation Request (HTMLページ) の処理: FALLBACK_HTML_PATH を返す
-    // index.htmlなど、アプリのHTMLへのアクセス全てをカバー
     if (req.mode === 'navigate') {
-        // ⭐ 修正: フォールバックを FALLBACK_HTML_PATH に統一
         event.respondWith(
-            caches.match(FALLBACK_HTML_PATH).then(cached => cached || fetch(req).catch(() => caches.match(FALLBACK_HTML_PATH)))
+            caches.match(FALLBACK_HTML_PATH).then(cached => {
+                if(cached) {
+                    console.log(`[SW:NAVIGATE] Serving ${FALLBACK_HTML_PATH} from cache for: ${url.pathname}`);
+                    return cached;
+                }
+                return fetch(req).catch(() => caches.match(FALLBACK_HTML_PATH));
+            })
         );
         return;
     }
 
-    // 2. App-shell assets (Cache-First) - Absolute paths only
-    // キャッシュ済みのアプリシェルリソースはキャッシュ優先
-    if (urlsToCache.includes(url.pathname) || urlsToCache.includes(url.href)) {
-         event.respondWith(
-            caches.match(req).then(cached => cached || fetch(req).catch(() => caches.match(FALLBACK_HTML_PATH))) // フォールバックは FALLBACK_HTML_PATH に
-        );
-        return;
-    }
-    
-    // 3. CDN (jsdelivr) -> network-first then cache
+    // ... (3. CDN と 4. Other same-origin static assets のロジックは前回通り) ...
+    // 3. CDN (jsdelivr) -> network-first then cache
     if (url.origin !== location.origin && url.hostname.includes('jsdelivr.net')) {
         event.respondWith(
             fetch(req).then(networkRes => {
@@ -90,26 +99,20 @@ self.addEventListener('fetch', (event) => {
     // 4. Other same-origin static assets -> cache-first/runtime-caching
     event.respondWith(
         caches.match(req).then(cached => cached || fetch(req).then(networkRes => {
-            // runtime cache for fetched assets (small files)
             return caches.open(RUNTIME_CACHE).then(cache => {
                 try { cache.put(req, networkRes.clone()); } catch (e) { /* ignore */ }
                 return networkRes;
             });
         }).catch(() => {
-            // if request is for an image, return a transparent 1x1 PNG fallback (optional)
-            if (req.destination === 'image') {
-                return new Response(null, { status: 404 });
-            }
-            // For other failing same-origin requests, return FALLBACK_HTML_PATH as a last resort fallback
+            // Last resort fallback to index.html
             return caches.match(FALLBACK_HTML_PATH);
         }))
     );
 });
 
-// Allow clients to message the SW (e.g. to trigger skipWaiting)
+// Allow clients to message the SW
 self.addEventListener('message', (event) => {
-    if (!event.data) return;
-    if (event.data.type === 'SKIP_WAITING') {
+    if (event.data && event.data.type === 'SKIP_WAITING') {
         self.skipWaiting();
     }
 });
