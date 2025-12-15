@@ -814,43 +814,63 @@
     <audio id="player" preload="auto"></audio>
   </div>
 
-  <script>
-    // ** PWA Service Worker Registration **
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('./sw.js', { scope: './' })
-        .then(reg => {
-            console.log('ServiceWorker registered:', reg);
-            showNotification('Service Worker 登録済み', false, 2000);
+  <script>// ** PWA Service Worker Registration **
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js', { scope: './' })
+    .then(reg => {
+        console.log('ServiceWorker registered:', reg);
+        showNotification('Service Worker 登録済み', false, 2000);
 
-            // 新しい SW がインストールされたらクライアントに通知
-            reg.addEventListener('updatefound', () => {
-                const newWorker = reg.installing;
-                newWorker.addEventListener('statechange', () => {
-                    if (newWorker.state === 'installed') {
-                        if (navigator.serviceWorker.controller) {
-                            // 更新適用可能
-                            showNotification('新しいバージョンを検出しました。ページをリロードすると更新されます。', false, 4000);
-                        } else {
-                            // 初回インストール
-                            showNotification('アプリがオフラインで使用できるようになりました。', false, 3000);
-                        }
+        // ⭐ [修正箇所] iOS/PWAでホーム画面から開いた場合のURL修正ロジックを追加
+        // "homescreen" や "standalone" モードで起動し、かつURLに不要なクエリパラメータがある場合
+        if (window.matchMedia('(display-mode: standalone)').matches || 
+            window.location.search.includes('homescreen') || 
+            window.location.search.includes('standalone')) {
+            
+            const url = new URL(window.location.href);
+            // 'homescreen', 'standalone', 'source' などの不要なクエリパラメータを削除
+            url.searchParams.delete('homescreen');
+            url.searchParams.delete('standalone');
+            url.searchParams.delete('source');
+            
+            // クリーンなURLと現在のURLが異なる場合、リダイレクト
+            if (window.location.href !== url.href) {
+                console.log("PWA mode detected, redirecting to clean URL:", url.href);
+                window.location.replace(url.href);
+                return; // リダイレクトが発生するため、以降の処理をスキップ
+            }
+        }
+        // ⭐ [修正箇所終わり]
+
+        // 新しい SW がインストールされたらクライアントに通知
+        reg.addEventListener('updatefound', () => {
+            const newWorker = reg.installing;
+            newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed') {
+                    if (navigator.serviceWorker.controller) {
+                        // 更新適用可能
+                        showNotification('新しいバージョンを検出しました。ページをリロードすると更新されます。', false, 4000);
+                    } else {
+                        // 初回インストール
+                        showNotification('アプリがオフラインで使用できるようになりました。', false, 3000);
                     }
-                });
-            });
-
-            // 早期に新しいSWを有効化したい場合（開発時向け）
-            navigator.serviceWorker.addEventListener('message', (ev) => {
-                if (ev.data && ev.data.type === 'SKIP_WAITING') {
-                    navigator.serviceWorker.getRegistration().then(reg => {
-                        if (reg && reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-                    });
                 }
             });
-        }).catch(err => {
-            console.warn('ServiceWorker registration failed:', err);
-            showNotification('Service Worker の登録に失敗しました。', true, 3000);
         });
-    }
+
+        // 早期に新しいSWを有効化したい場合（開発時向け）
+        navigator.serviceWorker.addEventListener('message', (ev) => {
+            if (ev.data && ev.data.type === 'SKIP_WAITING') {
+                navigator.serviceWorker.getRegistration().then(reg => {
+                    if (reg && reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+                });
+            }
+        });
+    }).catch(err => {
+        console.warn('ServiceWorker registration failed:', err);
+        showNotification('Service Worker の登録に失敗しました。', true, 3000);
+    });
+}
     
     // --- グローバル変数 ---
     const playlists = [];
